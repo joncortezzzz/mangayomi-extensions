@@ -7,96 +7,116 @@ const mangayomiSources = [{
   "typeSource": "single",
   "isManga": false,
   "isNsfw": true,
-  "version": "0.0.2",
+  "version": "0.0.3",
   "appMinVerReq": "0.5.0",
   "sourceCodeLanguage": 1,
 }];
 
 class DefaultExtension extends MProvider {
-  getHeaders(url) {
+
+  getHeaders() {
     return {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Referer": "https://hanime.tv/",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "User-Agent": "Mozilla/5.0",
+      "Content-Type": "application/json;charset=UTF-8",
+      "X-Requested-With": "XMLHttpRequest",
     };
   }
 
-  async fetchDoc(url) {
-    const res = await new Client().get(url, this.getHeaders(url));
-    return new Document(res.body);
+  async postSearch(query, page, orderBy = "created_at_unix") {
+    const body = JSON.stringify({
+      search: query ?? "",
+      tags: [],
+      brands: [],
+      blacklist: [],
+      order_by: orderBy,
+      ordering: "desc",
+      page: page - 1,
+    });
+    const res = await new Client().post(
+      "https://search.hanime.tv/hentaivideos",
+      this.getHeaders(),
+      body
+    );
+    return JSON.parse(res.body);
   }
 
-  parseCard(el) {
-    const a = el.selectFirst("a.hvpi-wrap, a[href*='/hentai-videos/']");
-    const img = el.selectFirst("img");
-    const title = el.selectFirst(".hvpi-title, .title, h4");
+  parseItem(v) {
     return {
-      name: title?.text?.trim() ?? a?.attr("title") ?? "",
-      url: a?.attr("href") ?? "",
-      imageUrl: img?.attr("src") ?? img?.attr("data-src") ?? "",
+      name: v.name ?? "",
+      url: "/hentai-videos/" + (v.slug ?? v.id),
+      imageUrl: v.poster_url ?? v.cover_url ?? "",
     };
   }
 
   async getPopular(page) {
-    const doc = await this.fetchDoc(`https://hanime.tv/browse/hentai-videos?order_by=likes&page=${page}`);
-    const cards = doc.select(".hvpi-container, .grid-item, article");
-    const list = cards.map(el => this.parseCard(el)).filter(v => v.url);
-    const next = doc.selectFirst(".pagination .next, a[rel='next']");
-    return { list, hasNextPage: !!next };
+    const data = await this.postSearch("", page, "likes");
+    const list = (data.hits ?? []).map(v => this.parseItem(v));
+    return { list, hasNextPage: list.length >= 24 };
   }
 
   async getLatestUpdates(page) {
-    const doc = await this.fetchDoc(`https://hanime.tv/browse/hentai-videos?order_by=created_at&page=${page}`);
-    const cards = doc.select(".hvpi-container, .grid-item, article");
-    const list = cards.map(el => this.parseCard(el)).filter(v => v.url);
-    const next = doc.selectFirst(".pagination .next, a[rel='next']");
-    return { list, hasNextPage: !!next };
+    const data = await this.postSearch("", page, "created_at_unix");
+    const list = (data.hits ?? []).map(v => this.parseItem(v));
+    return { list, hasNextPage: list.length >= 24 };
   }
 
   async search(query, page, filters) {
-    const doc = await this.fetchDoc(`https://hanime.tv/search?query=${encodeURIComponent(query)}&page=${page}`);
-    const cards = doc.select(".hvpi-container, .grid-item, article");
-    const list = cards.map(el => this.parseCard(el)).filter(v => v.url);
-    const next = doc.selectFirst(".pagination .next, a[rel='next']");
-    return { list, hasNextPage: !!next };
+    const data = await this.postSearch(query, page, "title_sortable");
+    const list = (data.hits ?? []).map(v => this.parseItem(v));
+    return { list, hasNextPage: list.length >= 24 };
   }
 
   async getDetail(url) {
-    const doc = await this.fetchDoc(url);
-    const name = doc.selectFirst("h1, .hentai-info h2, .video-title")?.text?.trim() ?? "";
-    const imageUrl = doc.selectFirst(".hvt-cp-left img, .cover img, video[poster]")?.attr("src") 
-                  ?? doc.selectFirst("video")?.attr("poster") ?? "";
-    const description = doc.selectFirst(".hv-description, .video-description, .synopsis")?.text?.trim() ?? "";
-    const tags = doc.select(".hentai-tag, .tag a").map(t => t.text.trim()).join(", ");
+    const slug = url.replace("/hentai-videos/", "");
+    const res = await new Client().get(
+      `https://hanime.tv/api/v8/video?id=${slug}`,
+      this.getHeaders()
+    );
+    const data = JSON.parse(res.body);
+    const v = data.hentai_video ?? {};
+    const tags = (v.hentai_tags ?? []).map(t => t.text).join(", ");
+
+    // Build episode list from franchise videos if available
+    const franchiseVideos = data.hentai_franchise_hentai_videos ?? [];
+    let episodes = [];
+    if (franchiseVideos.length > 0) {
+      episodes = franchiseVideos.map((ep, i) => ({
+        name: ep.name ?? `Episode ${i + 1}`,
+        url: "/hentai-videos/" + ep.slug,
+      }));
+    } else {
+      episodes = [{ name: v.name ?? "Episode 1", url }];
+    }
 
     return {
-      name,
-      imageUrl,
-      description,
+      name: v.name ?? "",
+      imageUrl: v.poster_url ?? v.cover_url ?? "",
+      description: v.description ?? "",
       genre: tags,
       status: 1,
-      episodes: [{ name: "Episode 1", url }],
+      episodes,
     };
   }
 
   async getVideoList(url) {
-    const doc = await this.fetchDoc(url);
+    const slug = url.replace("/hentai-videos/", "");
+    const res = await new Client().get(
+      `https://hanime.tv/api/v8/video?id=${slug}`,
+      this.getHeaders()
+    );
+    const data = JSON.parse(res.body);
     const videos = [];
 
-    // Try direct video sources first
-    const sources = doc.select("source[src]");
-    for (const s of sources) {
-      const src = s.attr("src") ?? "";
-      const label = s.attr("label") ?? s.attr("size") ?? "Default";
-      if (src) videos.push({ url: src, quality: label, originalUrl: src });
-    }
-
-    // Try iframes
-    if (videos.length === 0) {
-      const iframes = doc.select("iframe[src], iframe[data-src]");
-      for (const f of iframes) {
-        const src = f.attr("src") ?? f.attr("data-src") ?? "";
-        if (src) videos.push({ url: src, quality: "Default", originalUrl: src });
+    const servers = data.videos_manifest?.servers ?? [];
+    for (const server of servers) {
+      for (const stream of (server.streams ?? [])) {
+        if (stream.url && stream.url.length > 5) {
+          videos.push({
+            url: stream.url,
+            quality: stream.height ? `${stream.height}p` : "Default",
+            originalUrl: stream.url,
+          });
+        }
       }
     }
 
