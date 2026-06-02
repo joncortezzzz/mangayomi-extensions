@@ -16,7 +16,9 @@
     "hasCloudflare": false,
     "additionalParams": "",
     "isFullData": false,
-    "itemType": 0,
+    "itemType": 1,
+    "dateFormat": "",
+    "dateFormatLocale": "",
     "notes": ""
   },
   {
@@ -36,7 +38,9 @@
     "hasCloudflare": true,
     "additionalParams": "",
     "isFullData": false,
-    "itemType": 0,
+    "itemType": 1,
+    "dateFormat": "",
+    "dateFormatLocale": "",
     "notes": ""
   }
 ]
