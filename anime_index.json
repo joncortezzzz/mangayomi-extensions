@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Hanime.tv",
+    "id": 1001,
+    "lang": "en",
+    "baseUrl": "https://hanime.tv",
+    "apiUrl": "https://api.hanime.tv",
+    "iconUrl": "https://www.google.com/s2/favicons?sz=256&domain=https://hanime.tv",
+    "typeSource": "single",
+    "isManga": false,
+    "isNsfw": true,
+    "version": "0.0.1",
+    "appMinVerReq": "0.5.0",
+    "sourceCodeLanguage": 1,
+    "sourceCodeUrl": "https://raw.githubusercontent.com/joncortezzzz/mangayomi-extensions/main/anime/hanime.js",
+    "hasCloudflare": false,
+    "additionalParams": "",
+    "isFullData": false,
+    "itemType": 0,
+    "notes": ""
+  },
+  {
+    "name": "HentaiMama",
+    "id": 1002,
+    "lang": "en",
+    "baseUrl": "https://hentaimama.io",
+    "apiUrl": "",
+    "iconUrl": "https://www.google.com/s2/favicons?sz=256&domain=https://hentaimama.io",
+    "typeSource": "single",
+    "isManga": false,
+    "isNsfw": true,
+    "version": "0.0.1",
+    "appMinVerReq": "0.5.0",
+    "sourceCodeLanguage": 1,
+    "sourceCodeUrl": "https://raw.githubusercontent.com/joncortezzzz/mangayomi-extensions/main/anime/hentaimama.js",
+    "hasCloudflare": true,
+    "additionalParams": "",
+    "isFullData": false,
+    "itemType": 0,
+    "notes": ""
+  }
+]
