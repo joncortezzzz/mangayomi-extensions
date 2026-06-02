@@ -7,13 +7,13 @@ const mangayomiSources = [{
   "typeSource": "single",
   "isManga": false,
   "isNsfw": true,
-  "version": "0.0.2",
+  "version": "0.0.3",
   "appMinVerReq": "0.5.0",
   "sourceCodeLanguage": 1,
 }];
 
 class DefaultExtension extends MProvider {
-  getHeaders(url) {
+  getHeaders() {
     return {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Referer": "https://hentaimama.io/",
@@ -21,70 +21,78 @@ class DefaultExtension extends MProvider {
   }
 
   async fetchDoc(url) {
-    const res = await new Client().get(url, this.getHeaders(url));
+    const res = await new Client().get(url, this.getHeaders());
     return new Document(res.body);
   }
 
   parseCard(el) {
-    // Try multiple possible selectors
-    const a = el.selectFirst("a") ;
+    const a = el.selectFirst("a");
     const img = el.selectFirst("img");
-    const title = el.selectFirst(".title, h2, h3, .entry-title")
-                ?? el.selectFirst("a");
+    const title = el.selectFirst(".entry-title, h2, h3, .title")
+                ?? el.selectFirst("a[title]");
     return {
-      name: title?.text?.trim() ?? img?.attr("alt") ?? "",
+      name: (title?.text?.trim() ?? a?.attr("title") ?? img?.attr("alt") ?? "").trim(),
       url: a?.attr("href") ?? "",
       imageUrl: img?.attr("data-src") ?? img?.attr("src") ?? "",
     };
   }
 
   async getPopular(page) {
-    const doc = await this.fetchDoc(`https://hentaimama.io/tvshows/?page=${page}`);
-    // Try multiple container selectors
-    let cards = doc.select(".tvshows article, .movies-list article, article.item");
-    if (!cards || cards.length === 0) {
-      cards = doc.select("article");
-    }
+    const doc = await this.fetchDoc(`https://hentaimama.io/tvshows/page/${page}/`);
+    const cards = doc.select("article");
     const list = cards.map(el => this.parseCard(el)).filter(v => v.url && v.name);
-    const next = doc.selectFirst("a.next, .next a, a[rel='next']");
+    const next = doc.selectFirst("a.next, .next a");
     return { list, hasNextPage: !!next };
   }
 
   async getLatestUpdates(page) {
-    const doc = await this.fetchDoc(`https://hentaimama.io/episodes/?page=${page}`);
-    let cards = doc.select(".episodes article, article.item, article");
+    const doc = await this.fetchDoc(`https://hentaimama.io/episodes/page/${page}/`);
+    const cards = doc.select("article");
     const list = cards.map(el => this.parseCard(el)).filter(v => v.url && v.name);
-    const next = doc.selectFirst("a.next, .next a, a[rel='next']");
+    const next = doc.selectFirst("a.next, .next a");
     return { list, hasNextPage: !!next };
   }
 
   async search(query, page, filters) {
-    const doc = await this.fetchDoc(`https://hentaimama.io/?s=${encodeURIComponent(query)}&page=${page}`);
-    let cards = doc.select("article");
+    const doc = await this.fetchDoc(
+      `https://hentaimama.io/page/${page}/?s=${encodeURIComponent(query)}`
+    );
+    const cards = doc.select("article");
     const list = cards.map(el => this.parseCard(el)).filter(v => v.url && v.name);
-    const next = doc.selectFirst("a.next, .next a, a[rel='next']");
+    const next = doc.selectFirst("a.next, .next a");
     return { list, hasNextPage: !!next };
   }
 
   async getDetail(url) {
     const doc = await this.fetchDoc(url);
-    const name = doc.selectFirst("h1, h2.entry-title, .sheader h1")?.text?.trim() ?? "";
-    const imageUrl = doc.selectFirst(".poster img, .thumb img, img.wp-post-image")?.attr("src") ?? "";
-    const description = doc.selectFirst(".wp-content p, .description, .sinopsis p")?.text?.trim() ?? "";
 
-    // Look for episode list
-    const epLinks = doc.select(".episodios li a, .episodes-list a, #episodes a");
+    const name = (doc.selectFirst(".sheader h1, h1.entry-title, h1")?.text ?? "").trim();
+    const imageUrl = doc.selectFirst(".poster img, .thumb img, img.wp-post-image")?.attr("src") ?? "";
+    const description = (doc.selectFirst(".wp-content p, .sinopsis p, .description")?.text ?? "").trim();
+
+    // Episode list
+    const epLinks = doc.select("#episodes .episodios li a, .episodios li a, .episodes a");
     let episodes = [];
+
     if (epLinks.length > 0) {
       episodes = epLinks.map((a, i) => ({
-        name: a.text.trim() || `Episode ${i + 1}`,
-        url: a.attr("href"),
+        name: (a.text?.trim() || `Episode ${i + 1}`),
+        url: a.attr("href") ?? "",
       })).filter(e => e.url);
-    } else {
-      episodes = [{ name: "Watch", url }];
     }
 
-    return { name, imageUrl, description, status: 1, episodes };
+    // Fallback: if this IS an episode page itself
+    if (episodes.length === 0) {
+      episodes = [{ name: name || "Watch", url }];
+    }
+
+    return {
+      name: name || "Unknown",
+      imageUrl,
+      description,
+      status: 1,
+      episodes,
+    };
   }
 
   async getVideoList(url) {
@@ -92,19 +100,17 @@ class DefaultExtension extends MProvider {
     const videos = [];
 
     // Direct video sources
-    const sources = doc.select("source[src]");
-    for (const s of sources) {
+    for (const s of doc.select("source[src]")) {
       const src = s.attr("src") ?? "";
       const label = s.attr("label") ?? s.attr("size") ?? "Default";
       if (src) videos.push({ url: src, quality: label, originalUrl: src });
     }
 
-    // Iframes
+    // Iframes (skip ads)
     if (videos.length === 0) {
-      const iframes = doc.select("iframe");
-      for (const f of iframes) {
+      for (const f of doc.select("iframe")) {
         const src = f.attr("src") ?? f.attr("data-src") ?? "";
-        if (src && !src.includes("google") && !src.includes("facebook")) {
+        if (src && !src.includes("google") && !src.includes("facebook") && !src.includes("disqus")) {
           videos.push({ url: src, quality: "Default", originalUrl: src });
         }
       }
